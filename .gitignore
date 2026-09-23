@@ -26,7 +26,6 @@ __pycache__/
 # Uploaded Documents
 # =========================
 uploads/
-*.pdf
 *.png
 *.jpg
 *.jpeg
