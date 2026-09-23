@@ -7,10 +7,13 @@ __pycache__/
 *.so
 
 # Virtual environment
+veda/
 venv/
 .venv/
 env/
 ENV/
+__pycache__/
+*.pyc
 
 # =========================
 # Environment / Secrets
