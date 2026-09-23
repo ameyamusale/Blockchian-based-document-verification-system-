@@ -1,8 +1,11 @@
 from fastapi import FastAPI, UploadFile, File
 import shutil
 import os
+from app.services.blockchain_routes import router as blockchain_router
+
 
 app = FastAPI()
+app.include_router(blockchain_router)
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)

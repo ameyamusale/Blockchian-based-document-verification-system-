@@ -1,0 +1,23 @@
+{
+  "name": "blockchian-based-document-verification-system-",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ameyamusale/Blockchian-based-document-verification-system-.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ameyamusale/Blockchian-based-document-verification-system-/issues"
+  },
+  "homepage": "https://github.com/ameyamusale/Blockchian-based-document-verification-system-#readme",
+  "description": "",
+  "devDependencies": {
+    "hardhat": "^3.17.0"
+  }
+}
