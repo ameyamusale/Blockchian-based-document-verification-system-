@@ -26,6 +26,7 @@ __pycache__/
 # Uploaded Documents
 # =========================
 uploads/
+generated_qr/
 *.png
 *.jpg
 *.jpeg
@@ -34,7 +35,7 @@ uploads/
 # =========================
 # OCR / ML generated files
 # =========================
-models/
+/models/
 checkpoints/
 runs/
 outputs/
@@ -102,6 +103,9 @@ cache/
 typechain-types/
 
 # =========================
+# Local runtime data
+backend/data/
+
 # Temporary files
 # =========================
 *.tmp

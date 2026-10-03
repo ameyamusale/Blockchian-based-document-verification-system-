@@ -1,13 +1,17 @@
-# Sample Hardhat Project
+# ModelLedger — blockchain workspace
 
-This project demonstrates a basic Hardhat use case. It comes with a sample contract, a test for that contract, and a Hardhat Ignition module that deploys that contract.
+Hardhat 2 + ethers v6.
 
-Try running some of the following tasks:
+| Phase | Contract |
+|-------|----------|
+| 0–1 (now) | `DocumentRegistry.sol` — legacy baseline, kept so deploy/test works |
+| 3 | `ModelLedgerRegistry.sol` replaces it |
 
-```shell
-npx hardhat help
-npx hardhat test
-REPORT_GAS=true npx hardhat test
-npx hardhat node
-npx hardhat ignition deploy ./ignition/modules/Lock.js
+```bash
+npm install
+npm test                 # compiles + runs the contract tests
+npm run node             # terminal 1: local chain on :8545
+npm run deploy:local     # terminal 2: deploy, prints the address
 ```
+
+Hardhat downloads the Solidity compiler (0.8.27) on first run, so it needs internet access to `binaries.soliditylang.org`.

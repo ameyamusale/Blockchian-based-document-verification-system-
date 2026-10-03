@@ -1,242 +1,130 @@
-function getStorage() {
-  const storage = {};
+// ModelLedger console (Phase 1). Plain JS, no build step. All server text is inserted with textContent.
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
+const short = (h) => (h ? h.slice(0, 10) + "…" : "—");
+const fmt = (t) => new Date(t).toLocaleString();
 
-  try {
-    storage.local = window.localStorage;
-  } catch (e) {
-    storage.local = null;
+async function api(path, opts) {
+  const res = await fetch(path, opts);
+  let body = null;
+  try { body = await res.json(); } catch (_) { /* non-JSON */ }
+  if (!res.ok) {
+    let d = body && body.detail;
+    if (d && typeof d === "object" && !Array.isArray(d)) d = d.message || JSON.stringify(d);
+    if (Array.isArray(d)) d = d.map((x) => x.msg).join("; ");
+    throw new Error(d || `Request failed (${res.status})`);
   }
-
-  try {
-    storage.session = window.sessionStorage;
-  } catch (e) {
-    storage.session = null;
-  }
-
-  return storage;
+  return body;
 }
 
-function persistResult(result) {
-  const storage = getStorage();
-  const safeResult = JSON.stringify(result);
-  window.__veritrust_last_result = result;
+function setMsg(id, text, good) { const m = $(id); m.textContent = text; m.className = "msg " + (good ? "good" : "err"); }
 
-  try {
-    if (storage.local) storage.local.setItem('veritrust_result', safeResult);
-  } catch (e) {}
+function table(id, headers, rows) {
+  const t = $(id); t.replaceChildren();
+  if (!rows.length) { const d = el("div", "empty", "Nothing yet."); t.replaceWith(Object.assign(d, { id })); return; }
+  const thead = el("thead"), hr = el("tr");
+  headers.forEach((h) => hr.appendChild(el("th", "", h))); thead.appendChild(hr); t.appendChild(thead);
+  const tb = el("tbody");
+  rows.forEach((r) => { const tr = el("tr"); r.forEach((c, i) => tr.appendChild(el("td", i === 0 ? "mono" : "", c))); tb.appendChild(tr); });
+  t.appendChild(tb);
+}
+function ensureTable(id) { const n = $(id); if (n.tagName !== "TABLE") { const t = el("table"); t.id = id; n.replaceWith(t); } }
 
-  try {
-    if (storage.session) storage.session.setItem('veritrust_result', safeResult);
-  } catch (e) {}
-
-  try {
-    const url = new URL(window.location.href);
-    url.searchParams.set('result', encodeURIComponent(safeResult));
-    window.history.replaceState({}, '', url);
-  } catch (e) {}
+async function refreshStatus() {
+  const s = await api("/api/status");
+  const chips = $("statusChips"); chips.replaceChildren();
+  const add = (text, cls) => chips.appendChild(el("span", "chip " + (cls || ""), text));
+  add(`Phase ${s.implemented_phase} build`, "ok");
+  add(`Blockchain: ${s.blockchain.mode}${s.blockchain.connected ? "" : " (not connected)"}`, "warn");
+  add(`Storage: ${s.storage.mode}`, "warn");
+  add(`Signatures: ${s.signatures.implemented ? "on" : "not yet"}`, "warn");
 }
 
-function readStoredResult() {
-  const storage = getStorage();
+let models = [], artifacts = [];
+async function refreshLists() {
+  [models, artifacts] = await Promise.all([api("/api/models"), api("/api/artifacts")]);
+  const events = await api("/api/provenance/events");
+  ["modelTable", "artifactTable", "eventTable"].forEach(ensureTable);
+  $("modelCount").textContent = `(${models.length})`; $("artifactCount").textContent = `(${artifacts.length})`; $("eventCount").textContent = `(${events.length})`;
+  table("modelTable", ["ID", "Name", "Version", "Creator", "Status"], models.map((m) => [m.model_id, m.name, m.version, m.creator_name, m.status]));
+  table("artifactTable", ["ID", "SHA-256", "Model", "Size", "Registered"], artifacts.map((a) => [a.artifact_id, short(a.exact_hash), a.model_id || "—", a.size_bytes + " B", fmt(a.created_at)]));
+  ensureTable("eventTable");
+  table("eventTable", ["Event", "Action", "Parent", "Child", "Model / App", "Metadata hash"], events.map((e) => [e.event_id, e.action, e.parent_artifact_id || "—", e.child_artifact_id, e.model_id || e.application_id || "—", short(e.metadata_hash)]));
+  fillSelect($("modelSelect"), models.map((m) => [m.model_id, `${m.name} v${m.version} (${m.model_id})`]), "— none —");
+  fillSelect($("parentSelect"), artifacts.map((a) => [a.artifact_id, `${a.artifact_id} · ${short(a.exact_hash)}`]), "— none (GENERATED) —");
+}
+function fillSelect(sel, opts, firstLabel) {
+  const keep = sel.value; sel.replaceChildren();
+  const f = el("option", "", firstLabel); f.value = ""; sel.appendChild(f);
+  opts.forEach(([v, l]) => { const o = el("option", "", l); o.value = v; sel.appendChild(o); });
+  sel.value = keep;
+}
 
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const rawResult = params.get('result');
-    if (rawResult) {
-      const parsed = JSON.parse(decodeURIComponent(rawResult));
-      if (parsed && (parsed.document || parsed.name)) {
-        window.__veritrust_last_result = parsed;
-        return parsed;
-      }
-    }
-  } catch (e) {}
+async function withBusy(form, fn) {
+  const btn = form.querySelector("button"); btn.disabled = true;
+  try { await fn(); } finally { btn.disabled = false; }
+}
 
-  if (window.__veritrust_last_result && (window.__veritrust_last_result.document || window.__veritrust_last_result.name)) {
-    return window.__veritrust_last_result;
-  }
-
-  for (const key of ['local', 'session']) {
-    const store = storage[key];
-    if (!store) continue;
-
+$("modelForm").addEventListener("submit", async (e) => {
+  e.preventDefault(); const f = e.target;
+  await withBusy(f, async () => {
+    const body = Object.fromEntries(new FormData(f).entries());
+    Object.keys(body).forEach((k) => { if (body[k] === "") delete body[k]; });
     try {
-      const raw = store.getItem('veritrust_result');
-      if (!raw) continue;
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.document) return parsed;
-      if (parsed && parsed.name) return parsed;
-    } catch (e) {
-      continue;
-    }
-  }
-
-  return null;
-}
-
-function updateSelectedFileUI(fileInput) {
-  const statusText = document.getElementById('file-status');
-  const selectedBox = document.getElementById('selected-file-box');
-  const selectedName = document.getElementById('selected-file-name');
-
-  if (!fileInput || !statusText || !selectedBox || !selectedName) return;
-
-  const file = fileInput.files && fileInput.files[0];
-  if (!file) {
-    statusText.textContent = 'Click to select your marksheet or result card';
-    selectedBox.style.display = 'none';
-    selectedName.textContent = 'None';
-    return;
-  }
-
-  statusText.textContent = 'File loaded and ready to upload';
-  selectedName.textContent = file.name;
-  selectedBox.style.display = 'block';
-}
-
-function renderResultPage() {
-  const result = readStoredResult();
-  const resultBody = document.getElementById('result-body');
-  if (!resultBody) return;
-
-  if (!result) {
-    resultBody.innerHTML = '<div class="status-box danger">No verification result found. Please upload a document first.</div>';
-    return;
-  }
-
-  const checks = result.checks || [];
-  const statusClass = result.status === 'VERIFIED' ? 'success' : result.status === 'SUSPICIOUS' ? 'warning' : 'danger';
-
-  resultBody.innerHTML = `
-    <div class="status-box ${statusClass}">
-      <h3>DOCUMENT RESULT</h3>
-      <p class="muted">Status: <strong>${result.status}</strong></p>
-      <p class="muted">Trust Score: <strong>${result.trust_score || result.score || 0}%</strong></p>
-    </div>
-
-    <div class="result-grid">
-      <div class="metric">
-        <div class="label">Trust Score</div>
-        <div class="value">${result.trust_score || result.score || 0}%</div>
-      </div>
-      <div class="metric">
-        <div class="label">Status</div>
-        <div class="value">${result.status}</div>
-      </div>
-      <div class="metric">
-        <div class="label">Document Hash</div>
-        <div class="value" style="font-size:0.82rem;word-break:break-all">${(result.hash || 'N/A').slice(0, 24)}...</div>
-      </div>
-    </div>
-
-    <ul class="check-list">
-      ${checks.map((item) => `
-        <li>
-          <span>${item.label}</span>
-          <span class="${item.passed ? 'pass' : 'fail'}">${item.passed ? '✓' : '✗'}</span>
-        </li>
-      `).join('')}
-    </ul>
-  `;
-}
-
-function renderDetailsPage() {
-  const result = readStoredResult();
-  const detailsBody = document.getElementById('details-body');
-  if (!detailsBody) return;
-
-  if (!result) {
-    detailsBody.innerHTML = `
-      <div class="status-box danger">
-        No student details are available yet. Please upload a document and verify it first.
-      </div>
-    `;
-    return;
-  }
-
-  const doc = result.document || {};
-  detailsBody.innerHTML = `
-    <table class="info-table">
-      <tr><th>Student</th><td>${doc.name || 'N/A'}</td></tr>
-      <tr><th>Enrollment</th><td>${doc.roll_number || 'N/A'}</td></tr>
-      <tr><th>University</th><td>${doc.university || 'N/A'}</td></tr>
-      <tr><th>Semester</th><td>${doc.semester || 'N/A'}</td></tr>
-      <tr><th>CGPA</th><td>${doc.cgpa ?? 'N/A'}</td></tr>
-      <tr><th>Blockchain</th><td>${result.blockchain && result.blockchain.verified ? '✓ Registered and hash matched' : 'Not registered or hash mismatch'}</td></tr>
-      <tr><th>Hash</th><td style="word-break:break-all;">${result.hash || 'N/A'}</td></tr>
-    </table>
-  `;
-}
-
-async function submitUpload(form) {
-  const formData = new FormData(form);
-  const fileInput = form.querySelector('input[type="file"]');
-
-  if (!fileInput || !fileInput.files || !fileInput.files[0]) {
-    alert('Please choose a PDF or image file to continue.');
-    return;
-  }
-
-  const button = form.querySelector('button[type="submit"]');
-  const originalText = button.textContent;
-  button.textContent = 'Verifying...';
-  button.disabled = true;
-
-  try {
-    const response = await fetch('/api/upload', {
-      method: 'POST',
-      body: formData,
-    });
-
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.detail || 'Verification failed');
-    }
-
-    persistResult(data);
-    const resultUrl = '/result?result=' + encodeURIComponent(JSON.stringify(data));
-    window.location.href = resultUrl;
-  } catch (error) {
-    alert(error.message || 'Unable to verify this document right now.');
-    button.textContent = originalText;
-    button.disabled = false;
-  }
-}
-
-window.addEventListener('DOMContentLoaded', () => {
-  const uploadForm = document.getElementById('upload-form');
-  const fileInput = document.getElementById('file-input');
-
-  if (fileInput) {
-    fileInput.addEventListener('change', () => updateSelectedFileUI(fileInput));
-  }
-
-  if (uploadForm) {
-    uploadForm.addEventListener('submit', (event) => {
-      event.preventDefault();
-      submitUpload(uploadForm);
-    });
-  }
-
-  const resultLink = document.getElementById('result-link');
-  const detailsLink = document.getElementById('details-link');
-
-  if (resultLink) {
-    const params = new URLSearchParams(window.location.search);
-    const currentResult = params.get('result');
-    if (currentResult) {
-      resultLink.href = '/result?result=' + currentResult;
-    }
-  }
-
-  if (detailsLink) {
-    const params = new URLSearchParams(window.location.search);
-    const currentResult = params.get('result');
-    if (currentResult) {
-      detailsLink.href = '/details?result=' + currentResult;
-    }
-  }
-
-  if (fileInput) updateSelectedFileUI(fileInput);
-  renderResultPage();
-  renderDetailsPage();
+      const m = await api("/api/models", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      setMsg("modelMsg", `Registered ${m.model_id}`, true); f.reset(); f.model_type.value = "image-generator";
+      await Promise.all([refreshLists(), refreshStatus()]);
+    } catch (err) { setMsg("modelMsg", err.message, false); }
+  });
 });
+
+$("artifactForm").addEventListener("submit", async (e) => {
+  e.preventDefault(); const f = e.target;
+  await withBusy(f, async () => {
+    const fd = new FormData(f);
+    for (const k of [...fd.keys()]) if (fd.get(k) === "") fd.delete(k);
+    try {
+      const r = await api("/api/artifacts", { method: "POST", body: fd });
+      setMsg("artifactMsg", `Registered ${r.artifact.artifact_id}` + (r.event ? ` · ${r.event.action}` : ""), true); f.reset();
+      await Promise.all([refreshLists(), refreshStatus()]);
+    } catch (err) { setMsg("artifactMsg", err.message, false); }
+  });
+});
+
+$("verifyForm").addEventListener("submit", async (e) => {
+  e.preventDefault(); const f = e.target;
+  await withBusy(f, async () => {
+    try {
+      const r = await api("/api/verify", { method: "POST", body: new FormData(f) });
+      setMsg("verifyMsg", "Done.", true); renderResult(r);
+    } catch (err) { setMsg("verifyMsg", err.message, false); }
+  });
+});
+
+function renderResult(r) {
+  const body = $("resultBody"); body.replaceChildren(); $("resultCard").hidden = false;
+  body.appendChild(el("div", "badge " + r.decision.status, r.decision.status.replace("_", "-")));
+  const hashLine = el("p", "hint mono", "SHA-256 " + r.exact_hash); body.appendChild(hashLine);
+  if (r.artifact) body.appendChild(el("p", "", `Artifact ${r.artifact.artifact_id}` + (r.model ? ` · claimed origin: ${r.model.name} v${r.model.version} by ${r.model.creator_name}` : "")));
+  const ul = el("ul", "checks");
+  r.checks.forEach((c) => {
+    const li = el("li", c.state); li.appendChild(el("span", "ico", c.state === "pass" ? "✔" : c.state === "fail" ? "✖" : "–"));
+    li.appendChild(el("span", "", c.label + (c.state === "not_checked" ? " — not checked" : "")));
+    li.appendChild(el("span", "detail", c.state === "not_checked" ? "" : c.detail)); ul.appendChild(li);
+  });
+  body.appendChild(ul);
+  if (r.lineage && r.lineage.steps.length) {
+    body.appendChild(el("h3", "", "Lineage"));
+    const row = el("div", "lineage");
+    r.lineage.steps.forEach((s, i) => {
+      if (i) row.appendChild(el("span", "arrow", "→ " + (s.event ? s.event.action : "") + " →"));
+      row.appendChild(el("span", "node mono", s.artifact_id));
+    });
+    body.appendChild(row);
+  }
+  const reasons = el("ul", "reasons"); r.decision.reasons.forEach((t) => reasons.appendChild(el("li", "", t))); body.appendChild(reasons);
+  body.appendChild(el("p", "hint", "Blockchain: " + r.blockchain.note));
+  $("resultCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+Promise.all([refreshStatus(), refreshLists()]).catch((e) => setMsg("verifyMsg", "Could not reach the API: " + e.message, false));

@@ -1,23 +1,13 @@
 {
-  "name": "blockchian-based-document-verification-system-",
-  "version": "1.0.0",
-  "main": "index.js",
+  "name": "modelledger",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ModelLedger — AI content provenance & verification network (convenience scripts)",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "chain:install": "npm --prefix blockchain install",
+    "chain:test": "npm --prefix blockchain test",
+    "chain:node": "npm --prefix blockchain run node",
+    "chain:deploy": "npm --prefix blockchain run deploy:local"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/ameyamusale/Blockchian-based-document-verification-system-.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/ameyamusale/Blockchian-based-document-verification-system-/issues"
-  },
-  "homepage": "https://github.com/ameyamusale/Blockchian-based-document-verification-system-#readme",
-  "description": "",
-  "devDependencies": {
-    "hardhat": "^3.17.0"
-  }
+  "license": "ISC"
 }

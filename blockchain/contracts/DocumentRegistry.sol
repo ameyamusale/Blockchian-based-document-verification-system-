@@ -1,39 +1,41 @@
-const { expect } = require("chai");
-const { ethers } = require("hardhat");
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.27;
 
-describe("DocumentRegistry", function () {
-  let registry;
+/// @title DocumentRegistry (LEGACY baseline)
+/// @notice Kept only so the Phase 0 deploy/test flow works. It is replaced by
+///         ModelLedgerRegistry.sol in Phase 3.
+/// @dev The `Dhruv` baseline shipped this file with JavaScript test code inside it
+///      (it could not compile). It was reconstructed from DocumentRegistry.test.js.
+contract DocumentRegistry {
+    struct Document {
+        string hash;
+        address issuer;
+        uint256 timestamp;
+        bool exists;
+    }
 
-  beforeEach(async function () {
-    const DocumentRegistry = await ethers.getContractFactory("DocumentRegistry");
-    registry = await DocumentRegistry.deploy();
-    await registry.waitForDeployment();
-  });
+    mapping(string => Document) private documents;
 
-  it("registers a document and verifies it correctly", async function () {
-    await registry.registerDocument("VT-2026-0001", "hash_original_abc123");
+    event DocumentRegistered(string indexed documentIdIndexed, string documentId, string hash, address issuer);
 
-    const isValid = await registry.verifyDocument("VT-2026-0001", "hash_original_abc123");
-    expect(isValid).to.equal(true);
-  });
+    function registerDocument(string memory documentId, string memory documentHash) public {
+        require(!documents[documentId].exists, "Document already registered");
+        documents[documentId] = Document(documentHash, msg.sender, block.timestamp, true);
+        emit DocumentRegistered(documentId, documentId, documentHash, msg.sender);
+    }
 
-  it("detects a tampered document (hash mismatch)", async function () {
-    await registry.registerDocument("VT-2026-0002", "hash_original_abc123");
+    function verifyDocument(string memory documentId, string memory documentHash) public view returns (bool) {
+        require(documents[documentId].exists, "Document not found");
+        return keccak256(bytes(documents[documentId].hash)) == keccak256(bytes(documentHash));
+    }
 
-    const isValid = await registry.verifyDocument("VT-2026-0002", "hash_tampered_xyz999");
-    expect(isValid).to.equal(false);
-  });
-
-  it("prevents registering the same document_id twice", async function () {
-    await registry.registerDocument("VT-2026-0003", "hash_abc");
-    await expect(
-      registry.registerDocument("VT-2026-0003", "hash_def")
-    ).to.be.revertedWith("Document already registered");
-  });
-
-  it("reverts when verifying a document that was never registered", async function () {
-    await expect(
-      registry.verifyDocument("VT-NONEXISTENT", "some_hash")
-    ).to.be.revertedWith("Document not found");
-  });
-});
+    function getDocument(string memory documentId)
+        public
+        view
+        returns (string memory, address, uint256)
+    {
+        require(documents[documentId].exists, "Document not found");
+        Document memory d = documents[documentId];
+        return (d.hash, d.issuer, d.timestamp);
+    }
+}

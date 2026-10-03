@@ -1,0 +1,2 @@
+# Optional: install in Phase 3 when the on-chain registry is wired up
+web3>=6.15
